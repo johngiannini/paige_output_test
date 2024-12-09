@@ -1,19 +1,43 @@
 import concurrent.futures
 from loguru import logger
-import streamlit as st
+from queue import Queue
+import time
+
+from output.output import Output
+from output.enums import OutputType
 
 
 def lets_do_this(sc):
-    sc.write("Here we go!")
-    sc.write("Here's the multi-threaded part:")
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-    #     futures = [executor.submit(_do_this, i, sc) for i in range(2)]
-    # for future in futures:
-    #     future.result()
-    sc.write("And there we go!")
-    sc.update(label="Test Completed.", state="complete", expanded=False)
+    Output().write(message="Here we go!", output_type=OutputType.Log)
+    output_queue = Queue()
+
+    Output().write(message="Here's the multi-threaded part:", output_type=OutputType.Log)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_do_this, i, output_queue): i for i in range(5)}
+
+        while futures:
+            while not output_queue.empty():
+                Output().write(message=output_queue.get(), output_type=OutputType.Log)
+
+            done, _ = concurrent.futures.wait(futures, timeout=0.1, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                task_id = futures[future]
+                result = future.result()  # Retrieve the result
+                Output().write(message=f"Task {task_id} finished with result: {result}", output_type=OutputType.Log)
+                del futures[future]
 
 
-def _do_this(i, sc):
-    logger.info(f"Doing this {i}...")
-    sc.write(f"Doing this {i}...")
+
+    Output().write(message="And there we go!", output_type=OutputType.Log)
+    Output().write(message="Test Completed.", output_type=OutputType.Complete)
+
+
+def _do_this(i, output_queue):
+    logger.info("Doing this {i}...")
+    output_queue.put(f"Doing this {i} first time...")
+    time.sleep(2)
+    output_queue.put(f"Doing this {i} second time...")
+    time.sleep(2)
+    output_queue.put(f"Doing this {i} third time...")
+    logger.info("Done with this {i}.")
+    return i
